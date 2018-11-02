@@ -1,0 +1,1476 @@
+From fc339dc1a8baf0eba4147afe671b26da62d95198 Mon Sep 17 00:00:00 2001
+From: Elie ROUDNINSKI <elie@cloudflare.com>
+Date: Fri, 19 Oct 2018 23:08:28 +0100
+Subject: [PATCH] Add initial har_entry module
+
+---
+ libyara/Makefile.am             |    3 +-
+ libyara/modules/har_entry.c     |   88 +++
+ libyara/modules/har_entry_dec.h |   97 +++
+ libyara/modules/har_entry_set.h | 1221 +++++++++++++++++++++++++++++++
+ libyara/modules/module_list     |    1 +
+ 5 files changed, 1409 insertions(+), 1 deletion(-)
+ create mode 100644 libyara/modules/har_entry.c
+ create mode 100644 libyara/modules/har_entry_dec.h
+ create mode 100644 libyara/modules/har_entry_set.h
+
+diff --git a/libyara/Makefile.am b/libyara/Makefile.am
+index 4c86ec3..688792c 100644
+--- a/libyara/Makefile.am
++++ b/libyara/Makefile.am
+@@ -4,6 +4,7 @@ MODULES += modules/pe.c
+ MODULES += modules/elf.c
+ MODULES += modules/math.c
+ MODULES += modules/time.c
++MODULES += modules/har_entry.c
+ 
+ # This isn't really a module, but needs to be compiled with them.
+ MODULES += modules/pe_utils.c
+@@ -113,7 +114,7 @@ noinst_HEADERS = \
+ 
+ lib_LTLIBRARIES = libyara.la
+ 
+-libyara_la_LDFLAGS = -version-number 3:8:1
++libyara_la_LDFLAGS = -ljansson -version-number 3:8:1
+ 
+ BUILT_SOURCES = \
+   lexer.c \
+diff --git a/libyara/modules/har_entry.c b/libyara/modules/har_entry.c
+new file mode 100644
+index 0000000..c11588d
+--- /dev/null
++++ b/libyara/modules/har_entry.c
+@@ -0,0 +1,88 @@
++/*
++Copyright (c) 2014. The YARA Authors. All Rights Reserved.
++
++Redistribution and use in source and binary forms, with or without modification,
++are permitted provided that the following conditions are met:
++
++1. Redistributions of source code must retain the above copyright notice, this
++list of conditions and the following disclaimer.
++
++2. Redistributions in binary form must reproduce the above copyright notice,
++this list of conditions and the following disclaimer in the documentation and/or
++other materials provided with the distribution.
++
++3. Neither the name of the copyright holder nor the names of its contributors
++may be used to endorse or promote products derived from this software without
++specific prior written permission.
++
++THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
++ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
++WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
++ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
++(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
++LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
++ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
++SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++*/
++
++#include <yara/modules.h>
++
++#include <jansson.h>
++
++#define MODULE_NAME har_entry
++
++#include "har_entry_dec.h"
++
++
++int module_initialize(
++    YR_MODULE* module)
++{
++  return ERROR_SUCCESS;
++}
++
++
++int module_finalize(
++    YR_MODULE* module)
++{
++  return ERROR_SUCCESS;
++}
++
++
++int module_load(
++    YR_SCAN_CONTEXT* context,
++    YR_OBJECT* module_object,
++    void* module_data,
++    size_t module_data_size)
++{
++  //printf("har_entry::module_load(%p, %p, %p, %zu)\n", context, module_object, module_data, module_data_size);
++  json_t *node = NULL;
++  if(module_data) {
++    if(module_data_size == 0) {
++      node = (json_t *)module_data;
++    } else {
++      json_error_t json_error;
++      memset(&json_error, 0, sizeof(json_error));
++      node = json_loadb(module_data, module_data_size, 0, &json_error);
++      module_object->data = node;
++    }
++  }
++  if(node) {
++    #include "har_entry_set.h"
++  }
++
++  return ERROR_SUCCESS;
++}
++
++
++int module_unload(
++    YR_OBJECT* module_object)
++{
++
++  if(module_object->data) {
++    json_decref(module_object->data);
++  }
++
++  return ERROR_SUCCESS;
++}
+diff --git a/libyara/modules/har_entry_dec.h b/libyara/modules/har_entry_dec.h
+new file mode 100644
+index 0000000..3f9f9da
+--- /dev/null
++++ b/libyara/modules/har_entry_dec.h
+@@ -0,0 +1,97 @@
++begin_declarations;
++  declare_string("pageref");
++  declare_string("startedDateTime");
++  declare_float("time");
++  begin_struct("request");
++    declare_string("method");
++    declare_string("url");
++    declare_string("httpVersion");
++      begin_struct_array("cookies");
++        declare_string("name");
++        declare_string("value");
++        declare_string("path");
++        declare_string("domain");
++        declare_string("expires");
++        declare_integer("httpOnly");
++        declare_integer("secure");
++        declare_string("comment");
++      end_struct_array("cookies");
++      begin_struct_array("headers");
++        declare_string("name");
++        declare_string("value");
++        declare_string("comment");
++      end_struct_array("headers");
++      begin_struct_array("queryString");
++        declare_string("name");
++        declare_string("value");
++        declare_string("comment");
++      end_struct_array("queryString");
++    begin_struct("postData");
++      declare_string("mimeType");
++      declare_string("text");
++        begin_struct_array("params");
++          declare_string("name");
++          declare_string("value");
++          declare_string("fileName");
++          declare_string("contentType");
++          declare_string("comment");
++        end_struct_array("params");
++      declare_string("comment");
++    end_struct("postData");
++    declare_integer("headersSize");
++    declare_integer("bodySize");
++    declare_string("comment");
++  end_struct("request");
++  begin_struct("response");
++    declare_integer("status");
++    declare_string("statusText");
++    declare_string("httpVersion");
++      begin_struct_array("cookies");
++        declare_string("name");
++        declare_string("value");
++        declare_string("path");
++        declare_string("domain");
++        declare_string("expires");
++        declare_integer("httpOnly");
++        declare_integer("secure");
++        declare_string("comment");
++      end_struct_array("cookies");
++      begin_struct_array("headers");
++        declare_string("name");
++        declare_string("value");
++        declare_string("comment");
++      end_struct_array("headers");
++    begin_struct("content");
++      declare_integer("size");
++      declare_integer("compression");
++      declare_string("mimeType");
++      declare_string("text");
++      declare_string("encoding");
++      declare_string("comment");
++    end_struct("content");
++    declare_string("redirectURL");
++    declare_integer("headersSize");
++    declare_integer("bodySize");
++    declare_string("comment");
++  end_struct("response");
++  begin_struct("cache");
++    begin_struct("beforeRequest");
++    end_struct("beforeRequest");
++    begin_struct("afterRequest");
++    end_struct("afterRequest");
++    declare_string("comment");
++  end_struct("cache");
++  begin_struct("timings");
++    declare_float("dns");
++    declare_float("connect");
++    declare_float("blocked");
++    declare_float("send");
++    declare_float("wait");
++    declare_float("receive");
++    declare_float("ssl");
++    declare_string("comment");
++  end_struct("timings");
++  declare_string("serverIPAddress");
++  declare_string("connection");
++  declare_string("comment");
++end_declarations;
+diff --git a/libyara/modules/har_entry_set.h b/libyara/modules/har_entry_set.h
+new file mode 100644
+index 0000000..531c769
+--- /dev/null
++++ b/libyara/modules/har_entry_set.h
+@@ -0,0 +1,1221 @@
++char path[4096] = {0};
++json_t *value __attribute__((unused));
++size_t index __attribute__((unused));
++const char *key __attribute__((unused));
++const char *str __attribute__((unused));
++  {
++    size_t pathlen = strlen(path);
++    if(pathlen == 0) {
++      snprintf(path+pathlen, sizeof(path)-pathlen, "pageref");
++    } else {
++      snprintf(path+pathlen, sizeof(path)-pathlen, ".pageref");
++    }
++    value = node;
++    json_t *node = json_object_get(value, "pageref");
++    if(node) {
++      str = json_string_value(node);
++      if(str) set_string(str, module_object, path);
++    }
++    path[pathlen] = 0;
++  }
++  {
++    size_t pathlen = strlen(path);
++    if(pathlen == 0) {
++      snprintf(path+pathlen, sizeof(path)-pathlen, "startedDateTime");
++    } else {
++      snprintf(path+pathlen, sizeof(path)-pathlen, ".startedDateTime");
++    }
++    value = node;
++    json_t *node = json_object_get(value, "startedDateTime");
++    if(node) {
++      str = json_string_value(node);
++      if(str) set_string(str, module_object, path);
++    }
++    path[pathlen] = 0;
++  }
++  {
++    size_t pathlen = strlen(path);
++    if(pathlen == 0) {
++      snprintf(path+pathlen, sizeof(path)-pathlen, "time");
++    } else {
++      snprintf(path+pathlen, sizeof(path)-pathlen, ".time");
++    }
++    value = node;
++    json_t *node = json_object_get(value, "time");
++    if(node) {
++      set_float(json_real_value(node), module_object, path);
++    }
++    path[pathlen] = 0;
++  }
++  {
++    size_t pathlen = strlen(path);
++    if(pathlen == 0) {
++      snprintf(path+pathlen, sizeof(path)-pathlen, "request");
++    } else {
++      snprintf(path+pathlen, sizeof(path)-pathlen, ".request");
++    }
++    value = node;
++    json_t *node = json_object_get(value, "request");
++    if(node) {
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "method");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".method");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "method");
++      if(node) {
++        str = json_string_value(node);
++        if(str) set_string(str, module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "url");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".url");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "url");
++      if(node) {
++        str = json_string_value(node);
++        if(str) set_string(str, module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "httpVersion");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".httpVersion");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "httpVersion");
++      if(node) {
++        str = json_string_value(node);
++        if(str) set_string(str, module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "cookies");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".cookies");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "cookies");
++      if(node) {
++      }
++      json_array_foreach(node, index, value) {
++        size_t pathlen = strlen(path);
++        snprintf(path+pathlen, sizeof(path)-pathlen, "[%zu]", index);
++        json_t *node = value;
++        if(node) {
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "name");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".name");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "name");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "value");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".value");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "value");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "path");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".path");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "path");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "domain");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".domain");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "domain");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "expires");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".expires");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "expires");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "httpOnly");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".httpOnly");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "httpOnly");
++          if(node) {
++            set_integer(json_integer_value(node), module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "secure");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".secure");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "secure");
++          if(node) {
++            set_integer(json_integer_value(node), module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "comment");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".comment");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "comment");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        path[pathlen] = 0;
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "headers");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".headers");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "headers");
++      if(node) {
++      }
++      json_array_foreach(node, index, value) {
++        size_t pathlen = strlen(path);
++        snprintf(path+pathlen, sizeof(path)-pathlen, "[%zu]", index);
++        json_t *node = value;
++        if(node) {
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "name");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".name");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "name");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "value");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".value");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "value");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "comment");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".comment");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "comment");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        path[pathlen] = 0;
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "queryString");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".queryString");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "queryString");
++      if(node) {
++      }
++      json_array_foreach(node, index, value) {
++        size_t pathlen = strlen(path);
++        snprintf(path+pathlen, sizeof(path)-pathlen, "[%zu]", index);
++        json_t *node = value;
++        if(node) {
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "name");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".name");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "name");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "value");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".value");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "value");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "comment");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".comment");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "comment");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        path[pathlen] = 0;
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "postData");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".postData");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "postData");
++      if(node) {
++      }
++      {
++        size_t pathlen = strlen(path);
++        if(pathlen == 0) {
++          snprintf(path+pathlen, sizeof(path)-pathlen, "mimeType");
++        } else {
++          snprintf(path+pathlen, sizeof(path)-pathlen, ".mimeType");
++        }
++        value = node;
++        json_t *node = json_object_get(value, "mimeType");
++        if(node) {
++          str = json_string_value(node);
++          if(str) set_string(str, module_object, path);
++        }
++        path[pathlen] = 0;
++      }
++      {
++        size_t pathlen = strlen(path);
++        if(pathlen == 0) {
++          snprintf(path+pathlen, sizeof(path)-pathlen, "text");
++        } else {
++          snprintf(path+pathlen, sizeof(path)-pathlen, ".text");
++        }
++        value = node;
++        json_t *node = json_object_get(value, "text");
++        if(node) {
++          str = json_string_value(node);
++          if(str) set_string(str, module_object, path);
++        }
++        path[pathlen] = 0;
++      }
++      {
++        size_t pathlen = strlen(path);
++        if(pathlen == 0) {
++          snprintf(path+pathlen, sizeof(path)-pathlen, "params");
++        } else {
++          snprintf(path+pathlen, sizeof(path)-pathlen, ".params");
++        }
++        value = node;
++        json_t *node = json_object_get(value, "params");
++        if(node) {
++        }
++        json_array_foreach(node, index, value) {
++          size_t pathlen = strlen(path);
++          snprintf(path+pathlen, sizeof(path)-pathlen, "[%zu]", index);
++          json_t *node = value;
++          if(node) {
++          }
++          {
++            size_t pathlen = strlen(path);
++            if(pathlen == 0) {
++              snprintf(path+pathlen, sizeof(path)-pathlen, "name");
++            } else {
++              snprintf(path+pathlen, sizeof(path)-pathlen, ".name");
++            }
++            value = node;
++            json_t *node = json_object_get(value, "name");
++            if(node) {
++              str = json_string_value(node);
++              if(str) set_string(str, module_object, path);
++            }
++            path[pathlen] = 0;
++          }
++          {
++            size_t pathlen = strlen(path);
++            if(pathlen == 0) {
++              snprintf(path+pathlen, sizeof(path)-pathlen, "value");
++            } else {
++              snprintf(path+pathlen, sizeof(path)-pathlen, ".value");
++            }
++            value = node;
++            json_t *node = json_object_get(value, "value");
++            if(node) {
++              str = json_string_value(node);
++              if(str) set_string(str, module_object, path);
++            }
++            path[pathlen] = 0;
++          }
++          {
++            size_t pathlen = strlen(path);
++            if(pathlen == 0) {
++              snprintf(path+pathlen, sizeof(path)-pathlen, "fileName");
++            } else {
++              snprintf(path+pathlen, sizeof(path)-pathlen, ".fileName");
++            }
++            value = node;
++            json_t *node = json_object_get(value, "fileName");
++            if(node) {
++              str = json_string_value(node);
++              if(str) set_string(str, module_object, path);
++            }
++            path[pathlen] = 0;
++          }
++          {
++            size_t pathlen = strlen(path);
++            if(pathlen == 0) {
++              snprintf(path+pathlen, sizeof(path)-pathlen, "contentType");
++            } else {
++              snprintf(path+pathlen, sizeof(path)-pathlen, ".contentType");
++            }
++            value = node;
++            json_t *node = json_object_get(value, "contentType");
++            if(node) {
++              str = json_string_value(node);
++              if(str) set_string(str, module_object, path);
++            }
++            path[pathlen] = 0;
++          }
++          {
++            size_t pathlen = strlen(path);
++            if(pathlen == 0) {
++              snprintf(path+pathlen, sizeof(path)-pathlen, "comment");
++            } else {
++              snprintf(path+pathlen, sizeof(path)-pathlen, ".comment");
++            }
++            value = node;
++            json_t *node = json_object_get(value, "comment");
++            if(node) {
++              str = json_string_value(node);
++              if(str) set_string(str, module_object, path);
++            }
++            path[pathlen] = 0;
++          }
++          path[pathlen] = 0;
++        }
++        path[pathlen] = 0;
++      }
++      {
++        size_t pathlen = strlen(path);
++        if(pathlen == 0) {
++          snprintf(path+pathlen, sizeof(path)-pathlen, "comment");
++        } else {
++          snprintf(path+pathlen, sizeof(path)-pathlen, ".comment");
++        }
++        value = node;
++        json_t *node = json_object_get(value, "comment");
++        if(node) {
++          str = json_string_value(node);
++          if(str) set_string(str, module_object, path);
++        }
++        path[pathlen] = 0;
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "headersSize");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".headersSize");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "headersSize");
++      if(node) {
++        set_integer(json_integer_value(node), module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "bodySize");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".bodySize");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "bodySize");
++      if(node) {
++        set_integer(json_integer_value(node), module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "comment");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".comment");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "comment");
++      if(node) {
++        str = json_string_value(node);
++        if(str) set_string(str, module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    path[pathlen] = 0;
++  }
++  {
++    size_t pathlen = strlen(path);
++    if(pathlen == 0) {
++      snprintf(path+pathlen, sizeof(path)-pathlen, "response");
++    } else {
++      snprintf(path+pathlen, sizeof(path)-pathlen, ".response");
++    }
++    value = node;
++    json_t *node = json_object_get(value, "response");
++    if(node) {
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "status");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".status");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "status");
++      if(node) {
++        set_integer(json_integer_value(node), module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "statusText");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".statusText");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "statusText");
++      if(node) {
++        str = json_string_value(node);
++        if(str) set_string(str, module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "httpVersion");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".httpVersion");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "httpVersion");
++      if(node) {
++        str = json_string_value(node);
++        if(str) set_string(str, module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "cookies");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".cookies");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "cookies");
++      if(node) {
++      }
++      json_array_foreach(node, index, value) {
++        size_t pathlen = strlen(path);
++        snprintf(path+pathlen, sizeof(path)-pathlen, "[%zu]", index);
++        json_t *node = value;
++        if(node) {
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "name");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".name");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "name");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "value");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".value");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "value");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "path");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".path");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "path");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "domain");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".domain");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "domain");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "expires");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".expires");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "expires");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "httpOnly");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".httpOnly");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "httpOnly");
++          if(node) {
++            set_integer(json_integer_value(node), module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "secure");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".secure");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "secure");
++          if(node) {
++            set_integer(json_integer_value(node), module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "comment");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".comment");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "comment");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        path[pathlen] = 0;
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "headers");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".headers");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "headers");
++      if(node) {
++      }
++      json_array_foreach(node, index, value) {
++        size_t pathlen = strlen(path);
++        snprintf(path+pathlen, sizeof(path)-pathlen, "[%zu]", index);
++        json_t *node = value;
++        if(node) {
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "name");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".name");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "name");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "value");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".value");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "value");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        {
++          size_t pathlen = strlen(path);
++          if(pathlen == 0) {
++            snprintf(path+pathlen, sizeof(path)-pathlen, "comment");
++          } else {
++            snprintf(path+pathlen, sizeof(path)-pathlen, ".comment");
++          }
++          value = node;
++          json_t *node = json_object_get(value, "comment");
++          if(node) {
++            str = json_string_value(node);
++            if(str) set_string(str, module_object, path);
++          }
++          path[pathlen] = 0;
++        }
++        path[pathlen] = 0;
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "content");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".content");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "content");
++      if(node) {
++      }
++      {
++        size_t pathlen = strlen(path);
++        if(pathlen == 0) {
++          snprintf(path+pathlen, sizeof(path)-pathlen, "size");
++        } else {
++          snprintf(path+pathlen, sizeof(path)-pathlen, ".size");
++        }
++        value = node;
++        json_t *node = json_object_get(value, "size");
++        if(node) {
++          set_integer(json_integer_value(node), module_object, path);
++        }
++        path[pathlen] = 0;
++      }
++      {
++        size_t pathlen = strlen(path);
++        if(pathlen == 0) {
++          snprintf(path+pathlen, sizeof(path)-pathlen, "compression");
++        } else {
++          snprintf(path+pathlen, sizeof(path)-pathlen, ".compression");
++        }
++        value = node;
++        json_t *node = json_object_get(value, "compression");
++        if(node) {
++          set_integer(json_integer_value(node), module_object, path);
++        }
++        path[pathlen] = 0;
++      }
++      {
++        size_t pathlen = strlen(path);
++        if(pathlen == 0) {
++          snprintf(path+pathlen, sizeof(path)-pathlen, "mimeType");
++        } else {
++          snprintf(path+pathlen, sizeof(path)-pathlen, ".mimeType");
++        }
++        value = node;
++        json_t *node = json_object_get(value, "mimeType");
++        if(node) {
++          str = json_string_value(node);
++          if(str) set_string(str, module_object, path);
++        }
++        path[pathlen] = 0;
++      }
++      {
++        size_t pathlen = strlen(path);
++        if(pathlen == 0) {
++          snprintf(path+pathlen, sizeof(path)-pathlen, "text");
++        } else {
++          snprintf(path+pathlen, sizeof(path)-pathlen, ".text");
++        }
++        value = node;
++        json_t *node = json_object_get(value, "text");
++        if(node) {
++          str = json_string_value(node);
++          if(str) set_string(str, module_object, path);
++        }
++        path[pathlen] = 0;
++      }
++      {
++        size_t pathlen = strlen(path);
++        if(pathlen == 0) {
++          snprintf(path+pathlen, sizeof(path)-pathlen, "encoding");
++        } else {
++          snprintf(path+pathlen, sizeof(path)-pathlen, ".encoding");
++        }
++        value = node;
++        json_t *node = json_object_get(value, "encoding");
++        if(node) {
++          str = json_string_value(node);
++          if(str) set_string(str, module_object, path);
++        }
++        path[pathlen] = 0;
++      }
++      {
++        size_t pathlen = strlen(path);
++        if(pathlen == 0) {
++          snprintf(path+pathlen, sizeof(path)-pathlen, "comment");
++        } else {
++          snprintf(path+pathlen, sizeof(path)-pathlen, ".comment");
++        }
++        value = node;
++        json_t *node = json_object_get(value, "comment");
++        if(node) {
++          str = json_string_value(node);
++          if(str) set_string(str, module_object, path);
++        }
++        path[pathlen] = 0;
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "redirectURL");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".redirectURL");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "redirectURL");
++      if(node) {
++        str = json_string_value(node);
++        if(str) set_string(str, module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "headersSize");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".headersSize");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "headersSize");
++      if(node) {
++        set_integer(json_integer_value(node), module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "bodySize");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".bodySize");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "bodySize");
++      if(node) {
++        set_integer(json_integer_value(node), module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "comment");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".comment");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "comment");
++      if(node) {
++        str = json_string_value(node);
++        if(str) set_string(str, module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    path[pathlen] = 0;
++  }
++  {
++    size_t pathlen = strlen(path);
++    if(pathlen == 0) {
++      snprintf(path+pathlen, sizeof(path)-pathlen, "cache");
++    } else {
++      snprintf(path+pathlen, sizeof(path)-pathlen, ".cache");
++    }
++    value = node;
++    json_t *node = json_object_get(value, "cache");
++    if(node) {
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "beforeRequest");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".beforeRequest");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "beforeRequest");
++      if(node) {
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "afterRequest");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".afterRequest");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "afterRequest");
++      if(node) {
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "comment");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".comment");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "comment");
++      if(node) {
++        str = json_string_value(node);
++        if(str) set_string(str, module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    path[pathlen] = 0;
++  }
++  {
++    size_t pathlen = strlen(path);
++    if(pathlen == 0) {
++      snprintf(path+pathlen, sizeof(path)-pathlen, "timings");
++    } else {
++      snprintf(path+pathlen, sizeof(path)-pathlen, ".timings");
++    }
++    value = node;
++    json_t *node = json_object_get(value, "timings");
++    if(node) {
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "dns");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".dns");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "dns");
++      if(node) {
++        set_float(json_real_value(node), module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "connect");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".connect");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "connect");
++      if(node) {
++        set_float(json_real_value(node), module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "blocked");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".blocked");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "blocked");
++      if(node) {
++        set_float(json_real_value(node), module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "send");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".send");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "send");
++      if(node) {
++        set_float(json_real_value(node), module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "wait");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".wait");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "wait");
++      if(node) {
++        set_float(json_real_value(node), module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "receive");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".receive");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "receive");
++      if(node) {
++        set_float(json_real_value(node), module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "ssl");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".ssl");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "ssl");
++      if(node) {
++        set_float(json_real_value(node), module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    {
++      size_t pathlen = strlen(path);
++      if(pathlen == 0) {
++        snprintf(path+pathlen, sizeof(path)-pathlen, "comment");
++      } else {
++        snprintf(path+pathlen, sizeof(path)-pathlen, ".comment");
++      }
++      value = node;
++      json_t *node = json_object_get(value, "comment");
++      if(node) {
++        str = json_string_value(node);
++        if(str) set_string(str, module_object, path);
++      }
++      path[pathlen] = 0;
++    }
++    path[pathlen] = 0;
++  }
++  {
++    size_t pathlen = strlen(path);
++    if(pathlen == 0) {
++      snprintf(path+pathlen, sizeof(path)-pathlen, "serverIPAddress");
++    } else {
++      snprintf(path+pathlen, sizeof(path)-pathlen, ".serverIPAddress");
++    }
++    value = node;
++    json_t *node = json_object_get(value, "serverIPAddress");
++    if(node) {
++      str = json_string_value(node);
++      if(str) set_string(str, module_object, path);
++    }
++    path[pathlen] = 0;
++  }
++  {
++    size_t pathlen = strlen(path);
++    if(pathlen == 0) {
++      snprintf(path+pathlen, sizeof(path)-pathlen, "connection");
++    } else {
++      snprintf(path+pathlen, sizeof(path)-pathlen, ".connection");
++    }
++    value = node;
++    json_t *node = json_object_get(value, "connection");
++    if(node) {
++      str = json_string_value(node);
++      if(str) set_string(str, module_object, path);
++    }
++    path[pathlen] = 0;
++  }
++  {
++    size_t pathlen = strlen(path);
++    if(pathlen == 0) {
++      snprintf(path+pathlen, sizeof(path)-pathlen, "comment");
++    } else {
++      snprintf(path+pathlen, sizeof(path)-pathlen, ".comment");
++    }
++    value = node;
++    json_t *node = json_object_get(value, "comment");
++    if(node) {
++      str = json_string_value(node);
++      if(str) set_string(str, module_object, path);
++    }
++    path[pathlen] = 0;
++  }
+diff --git a/libyara/modules/module_list b/libyara/modules/module_list
+index 264e255..58e6b6b 100644
+--- a/libyara/modules/module_list
++++ b/libyara/modules/module_list
+@@ -3,6 +3,7 @@ MODULE(pe)
+ MODULE(elf)
+ MODULE(math)
+ MODULE(time)
++MODULE(har_entry)
+ 
+ #ifdef DOTNET_MODULE
+ MODULE(dotnet)
+-- 
+2.19.1
+
